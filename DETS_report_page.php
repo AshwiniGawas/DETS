@@ -6,10 +6,6 @@ if (session_status() === PHP_SESSION_NONE) {
 
 include 'DETS_db.php';
 
-/* =========================================
-   CHECK LOGIN
-========================================= */
-
 if (!isset($_SESSION['user_id'])) {
 
     header("Location: DETS_login_page.php");
@@ -18,10 +14,6 @@ if (!isset($_SESSION['user_id'])) {
 
 $user_id = $_SESSION['user_id'];
 
-/* =========================================
-   REPORT SETTINGS
-========================================= */
-
 $reportType = $_GET['report_type'] ?? 'monthly';
 
 $selectedMonth = $_GET['month'] ?? date('m');
@@ -29,10 +21,6 @@ $selectedMonth = $_GET['month'] ?? date('m');
 $selectedYear = date('Y');
 
 $selectedWeek = $_GET['week'] ?? 1;
-
-/* =========================================
-   GET USER CATEGORIES
-========================================= */
 
 $categories = [];
 
@@ -56,10 +44,6 @@ while($cat = $categoryResult->fetch_assoc()){
 
 $categoryStmt->close();
 
-/* =========================================
-   WEEK CONDITION
-========================================= */
-
 switch($selectedWeek){
 
     case 1:
@@ -82,10 +66,6 @@ switch($selectedWeek){
         "DAY(expense_date) BETWEEN 22 AND 31";
         break;
 }
-
-/* =========================================
-   VARIABLES
-========================================= */
 
 $highestCategory = "";
 $highestAmount = 0;
@@ -114,19 +94,11 @@ $weekDays = [
     "Saturday"
 ];
 
-/* =========================================
-   INITIALIZE TOTALS
-========================================= */
-
 foreach($categories as $category){
 
     $monthlyTotals[$category] = 0;
     $weeklyTotals[$category] = 0;
 }
-
-/* =========================================
-   MONTHLY REPORT
-========================================= */
 
 if($reportType == "monthly"){
 
@@ -196,10 +168,6 @@ if($reportType == "monthly"){
         array_sum($monthlyData[$week]);
     }
 
-    /* =========================================
-       HIGHEST WEEK
-    ========================================= */
-
     if(!empty($weekTotals)){
 
         $maxWeekAmount = max($weekTotals);
@@ -213,10 +181,6 @@ if($reportType == "monthly"){
             )[0];
         }
     }
-
-    /* =========================================
-       HIGHEST CATEGORY
-    ========================================= */
 
     $highestStmt = $conn->prepare("
         SELECT category,
@@ -256,10 +220,6 @@ if($reportType == "monthly"){
 
     $highestStmt->close();
 }
-
-/* =========================================
-   WEEKLY REPORT
-========================================= */
 
 if($reportType == "weekly"){
 
@@ -308,10 +268,6 @@ if($reportType == "weekly"){
         array_sum($weeklyData[$day]);
     }
 
-    /* =========================================
-       HIGHEST DAY
-    ========================================= */
-
     if(!empty($dayTotals)){
 
         $maxDayAmount = max($dayTotals);
@@ -325,10 +281,6 @@ if($reportType == "weekly"){
             )[0];
         }
     }
-
-    /* =========================================
-       HIGHEST CATEGORY
-    ========================================= */
 
     $highestStmt = $conn->prepare("
         SELECT category,
@@ -370,10 +322,6 @@ if($reportType == "weekly"){
     $highestStmt->close();
 }
 
-/* =========================================
-   CHECK DATA
-========================================= */
-
 $hasExpenses = false;
 
 if($reportType == "monthly"){
@@ -399,10 +347,6 @@ if($reportType == "weekly"){
         }
     }
 }
-
-/* =========================================
-   INSIGHTS
-========================================= */
 
 if($hasExpenses){
 
