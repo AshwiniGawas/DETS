@@ -1,13 +1,19 @@
 <?php
 
 session_start();
-/* REMOVE USER SESSION ONLY */
-unset($_SESSION['user_id']);
-unset($_SESSION['user_name']);
-/* STORE POPUP MESSAGE */
-$_SESSION['success'] = "Logged Out Successfully!";
-/* REDIRECT */
-header("Location: DETS_dashboard.php");
-exit();
 
+/* CLEAR ALL SESSION DATA */
+$_SESSION = [];
+
+/* DESTROY SESSION */
+session_destroy();
+
+/* START NEW SESSION FOR MESSAGE */
+session_start();
+$_SESSION['success'] = "Logged Out Successfully!";
+
+/* REDIRECT TO DASHBOARD */
+header("Location: DETS_dashboard.php");
+
+exit();
 ?>

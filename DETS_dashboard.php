@@ -1,29 +1,127 @@
 <?php
+
 session_start();
 
 include 'DETS_db.php';
 
-// TOTAL AMOUNT
-$totalExpense = $conn->query("SELECT SUM(amount) AS total FROM expenses")
-                    ->fetch_assoc()['total'] ?? 0;
+/* =========================================
+   CHECK LOGIN
+========================================= */
 
-// TOTAL EXPENSE COUNT
-$totalExpenses = $conn->query("SELECT COUNT(*) AS total FROM expenses")
-                    ->fetch_assoc()['total'] ?? 0;
+if (!isset($_SESSION['user_id'])) {
 
-// TOTAL CATEGORIES
-$categories = $conn->query("SELECT COUNT(DISTINCT category) AS total FROM expenses")
-                    ->fetch_assoc()['total'] ?? 0;
+    header("Location: DETS_login_page.php");
+    exit();
 
-// LATEST EXPENSES
-$latest = $conn->query("SELECT * FROM expenses ORDER BY id DESC LIMIT 5");
+}
+
+/* =========================================
+   USER ID
+========================================= */
+
+$user_id = $_SESSION['user_id'];
+
+/* =========================================
+   CURRENT MONTH
+========================================= */
+
+$currentMonth = date('m');
+$currentYear  = date('Y');
+
+/* =========================================
+   TOTAL AMOUNT OF CURRENT MONTH
+========================================= */
+
+$stmt1 = $conn->prepare("
+    SELECT SUM(amount) AS total
+    FROM expenses
+    WHERE user_id = ?
+    AND MONTH(expense_date) = ?
+    AND YEAR(expense_date) = ?
+");
+
+$stmt1->bind_param("iii", $user_id, $currentMonth, $currentYear);
+
+$stmt1->execute();
+
+$totalExpenseQuery = $stmt1->get_result();
+
+$totalExpense =
+$totalExpenseQuery->fetch_assoc()['total'] ?? 0;
+
+/* =========================================
+   TOTAL EXPENSE COUNT OF CURRENT MONTH
+========================================= */
+
+$stmt2 = $conn->prepare("
+    SELECT COUNT(*) AS total
+    FROM expenses
+    WHERE user_id = ?
+    AND MONTH(expense_date) = ?
+    AND YEAR(expense_date) = ?
+");
+
+$stmt2->bind_param("iii", $user_id, $currentMonth, $currentYear);
+
+$stmt2->execute();
+
+$totalExpensesQuery = $stmt2->get_result();
+
+$totalExpenses =
+$totalExpensesQuery->fetch_assoc()['total'] ?? 0;
+
+/* =========================================
+   TOTAL CATEGORIES OF CURRENT MONTH
+========================================= */
+
+$stmt3 = $conn->prepare("
+    SELECT COUNT(DISTINCT category) AS total
+    FROM expenses
+    WHERE user_id = ?
+    AND MONTH(expense_date) = ?
+    AND YEAR(expense_date) = ?
+");
+
+$stmt3->bind_param("iii", $user_id, $currentMonth, $currentYear);
+
+$stmt3->execute();
+
+$categoriesQuery = $stmt3->get_result();
+
+$categories =
+$categoriesQuery->fetch_assoc()['total'] ?? 0;
+
+/* =========================================
+   RECENT 10 EXPENSES
+========================================= */
+
+$stmt4 = $conn->prepare("
+    SELECT *
+    FROM expenses
+    WHERE user_id = ?
+    AND MONTH(expense_date) = ?
+    AND YEAR(expense_date) = ?
+    ORDER BY id DESC
+    LIMIT 10
+");
+
+$stmt4->bind_param("iii", $user_id, $currentMonth, $currentYear);
+
+$stmt4->execute();
+
+$latest = $stmt4->get_result();
+
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
+
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<meta name="viewport"
+content="width=device-width, initial-scale=1.0">
 
 <title>DETS Dashboard</title>
 
@@ -105,11 +203,87 @@ body{
     color:#1e293b;
 }
 
-.profile{
-    background:white;
-    padding:10px 18px;
-    border-radius:10px;
-    box-shadow:0 4px 12px rgba(0,0,0,0.08);
+/* USER ACTIONS */
+
+.user-actions{
+    display:flex;
+    align-items:center;
+    gap:12px;
+}
+
+.profile-icon{
+    font-size:32px;
+    text-decoration:none;
+    color:#1e293b;
+}
+
+.auth-btn{
+    padding:8px 14px;
+    border-radius:8px;
+    text-decoration:none;
+    font-size:14px;
+    font-weight:600;
+    transition:0.3s;
+}
+
+.btn-logout{
+    background:#dc2626;
+    color:white;
+}
+
+.auth-btn:hover{
+    opacity:0.85;
+}
+
+/* HERO SECTION */
+
+.hero-section{
+    background:linear-gradient(135deg,#3b82f6,#6366f1);
+    border-radius:24px;
+    padding:35px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-bottom:35px;
+    color:white;
+    overflow:hidden;
+    box-shadow:0 10px 25px rgba(0,0,0,0.1);
+}
+
+.hero-content{
+    max-width:55%;
+}
+
+.hero-content h2{
+    font-size:38px;
+    margin-bottom:18px;
+    line-height:1.3;
+}
+
+.hero-content p{
+    font-size:18px;
+    opacity:0.95;
+    line-height:1.7;
+}
+
+.hero-image img{
+    width:320px;
+    animation:floatImage 3s ease-in-out infinite;
+}
+
+@keyframes floatImage{
+
+    0%{
+        transform:translateY(0px);
+    }
+
+    50%{
+        transform:translateY(-10px);
+    }
+
+    100%{
+        transform:translateY(0px);
+    }
 }
 
 /* CARDS */
@@ -195,136 +369,13 @@ tr:hover{
     font-size:14px;
 }
 
-/* RESPONSIVE */
+/* NO DATA */
 
-@media(max-width:768px){
-
-    .sidebar{
-        width:100%;
-        height:auto;
-        position:relative;
-    }
-
-    .main{
-        margin-left:0;
-        width:100%;
-    }
-
-    body{
-        flex-direction:column;
-    }
-
-    .hero-section{
-    flex-direction:column;
+.no-data{
     text-align:center;
-    }
-
-    .hero-content{
-    max-width:100%;
-    margin-bottom:20px;
-    }
-
-    .hero-content h2{
-    font-size:28px;
-    }
-
-.hero-image img{
-    width:220px;
-}
-}
-
-.user-actions {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    }
-
-.profile-icon {
-    font-size: 32px;
-    text-decoration: none;
-    }
-
-.auth-btn {
-    padding: 6px 12px;
-    border-radius: 4px;
-    text-decoration: none;
-    font-size: 14px;
-    font-weight: 500;
-    }
-
-.btn-login {
-    background-color: transparent;
-    border: 1px solid #007bff;
-    color: #007bff;
-    }
-
-.btn-register {
-    background-color: #007bff;
-    border: 1px solid #007bff;
-    color: white;
-    }
-
-.btn-logout {
-    background-color: #dc3545;
-    border: 1px solid #dc3545;
-    color: white;
-    }
-
-.auth-btn:hover {
-    opacity: 0.85;
-    }
-
-/* HERO SECTION */
-
-.hero-section{
-    background:linear-gradient(135deg,#3b82f6,#6366f1);
-    border-radius:24px;
-    padding:35px;
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    margin-bottom:35px;
-    color:white;
-    overflow:hidden;
-    box-shadow:0 10px 25px rgba(0,0,0,0.1);
-}
-
-.hero-content{
-    max-width:55%;
-}
-
-.hero-content h2{
-    font-size:38px;
-    margin-bottom:18px;
-    line-height:1.3;
-}
-
-.hero-content p{
+    padding:20px;
+    color:#64748b;
     font-size:18px;
-    opacity:0.95;
-    line-height:1.7;
-}
-
-.hero-image img{
-    width:320px;
-    animation:floatImage 3s ease-in-out infinite;
-}
-
-/* FLOAT ANIMATION */
-
-@keyframes floatImage{
-
-    0%{
-        transform:translateY(0px);
-    }
-
-    50%{
-        transform:translateY(-10px);
-    }
-
-    100%{
-        transform:translateY(0px);
-    }
 }
 
 /* POPUP */
@@ -356,6 +407,50 @@ tr:hover{
     }
 }
 
+/* RESPONSIVE */
+
+@media(max-width:768px){
+
+    body{
+        flex-direction:column;
+    }
+
+    .sidebar{
+        width:100%;
+        height:auto;
+        position:relative;
+    }
+
+    .main{
+        margin-left:0;
+        width:100%;
+    }
+
+    .hero-section{
+        flex-direction:column;
+        text-align:center;
+    }
+
+    .hero-content{
+        max-width:100%;
+        margin-bottom:20px;
+    }
+
+    .hero-content h2{
+        font-size:28px;
+    }
+
+    .hero-image img{
+        width:220px;
+    }
+
+    .topbar{
+        flex-direction:column;
+        align-items:flex-start;
+        gap:15px;
+    }
+}
+
 </style>
 
 </head>
@@ -369,19 +464,23 @@ tr:hover{
     <h2>DETS</h2>
 
     <a href="DETS_dashboard.php">
-        <i class="fa-solid fa-chart-line"></i> Dashboard
+        <i class="fa-solid fa-chart-line"></i>
+        Dashboard
     </a>
 
     <a href="DETS_expense_page.php">
-        <i class="fa-solid fa-wallet"></i> Expenses
+        <i class="fa-solid fa-wallet"></i>
+        Expenses
     </a>
 
     <a href="DETS_chart_page.php">
-        <i class="fa-solid fa-chart-pie"></i> Charts
+        <i class="fa-solid fa-chart-pie"></i>
+        Charts
     </a>
 
     <a href="DETS_report_page.php">
-        <i class="fa-solid fa-file-lines"></i> Reports
+        <i class="fa-solid fa-file-lines"></i>
+        Reports
     </a>
 
 </div>
@@ -394,66 +493,96 @@ tr:hover{
 
     <div class="topbar">
 
-        <h1>Dashboard</h1>
+        <h1>
+            Dashboard -
+            <?php echo date("F Y"); ?>
+        </h1>
 
         <div class="user-actions">
-        <!-- Conditional Display Based on Login Status -->
-        <?php if(isset($_SESSION['user_id'])): ?>
-            <!-- Shown ONLY when user is logged in -->
-            <a href="DETS_profile_page.php" class="profile-icon" title="View Profile"><i class="fa-solid fa-circle-user"></i></a>
-            <a href="DETS_logout.php" class="auth-btn btn-logout">Logout</a>
-        <?php else: ?>
-            <!-- Shown ONLY when user is guest / logged out -->
-            <a href="DETS_login_page.php" class="auth-btn btn-login">Login</a>
-            <a href="DETS_signuppage.php" class="auth-btn btn-register">Register</a>
-        <?php endif; ?>
+
+            <a href="DETS_profile_page.php"
+               class="profile-icon"
+               title="View Profile">
+
+               <i class="fa-solid fa-circle-user"></i>
+
+            </a>
+
+            <a href="DETS_logout.php"
+               class="auth-btn btn-logout">
+
+               Logout
+
+            </a>
+
         </div>
 
     </div>
 
     <!-- HERO SECTION -->
 
-<div class="hero-section">
+    <div class="hero-section">
 
-    <div class="hero-content">
+        <div class="hero-content">
 
-        <h2>
-            Track Every Rupee, Build Your Future 💰
-        </h2>
+            <h2>
+                Welcome,
+                <?php echo htmlspecialchars($_SESSION['user_name']); ?> 💰
+            </h2>
 
-        <p>
-            “A budget is telling your money where to go
-            instead of wondering where it went.”
-        </p>
+            <p>
+                “A budget is telling your money where to go
+                instead of wondering where it went.”
+            </p>
+
+        </div>
+
+        <div class="hero-image">
+
+            <img src="eta.png" alt="Expense Tracker">
+
+        </div>
 
     </div>
-
-    <div class="hero-image">
-
-        <img src="eta.png"
-            alt="Expense Tracker">
-
-    </div>
-
-</div>
 
     <!-- CARDS -->
 
     <div class="cards">
 
         <div class="card">
-            <h3>Total Expenses</h3>
-            <h1><?php echo $totalExpenses; ?></h1>
+
+            <h3>
+                Total Expenses This Month
+            </h3>
+
+            <h1>
+                <?php echo $totalExpenses; ?>
+            </h1>
+
         </div>
 
         <div class="card">
-            <h3>Total Amount</h3>
-            <h1>₹<?php echo number_format($totalExpense,2); ?></h1>
+
+            <h3>
+                Total Amount This Month
+            </h3>
+
+            <h1>
+                ₹<?php echo number_format($totalExpense,2); ?>
+            </h1>
+
         </div>
 
         <div class="card">
-            <h3>Categories</h3>
-            <h1><?php echo $categories; ?></h1>
+
+            <h3>
+                Categories This Month
+            </h3>
+
+            <h1>
+                <?php echo $categories; ?>
+            </h1>
+
         </div>
 
     </div>
@@ -463,38 +592,78 @@ tr:hover{
     <div class="table-container">
 
         <div class="table-header">
-            <h2>Recent Expenses</h2>
+
+            <h2>
+                10 Recent Expenses Of Current Month
+            </h2>
+
         </div>
 
         <table>
 
             <tr>
+
                 <th>Title</th>
                 <th>Amount</th>
                 <th>Category</th>
                 <th>Date</th>
+
             </tr>
+
+            <?php if($latest->num_rows > 0) { ?>
 
             <?php while($row = $latest->fetch_assoc()) { ?>
 
             <tr>
 
                 <td>
-                    <?php echo htmlspecialchars($row['title']); ?>
+                    <?php
+                    echo htmlspecialchars($row['title']);
+                    ?>
                 </td>
 
                 <td>
-                    ₹<?php echo number_format($row['amount'],2); ?>
+                    ₹<?php
+                    echo number_format(
+                        $row['amount'],
+                        2
+                    );
+                    ?>
                 </td>
 
                 <td>
+
                     <span class="badge">
-                        <?php echo htmlspecialchars($row['category']); ?>
+
+                    <?php
+                    echo htmlspecialchars(
+                        $row['category']
+                    );
+                    ?>
+
                     </span>
+
                 </td>
 
                 <td>
-                    <?php echo $row['expense_date']; ?>
+                    <?php
+                    echo $row['expense_date'];
+                    ?>
+                </td>
+
+            </tr>
+
+            <?php } ?>
+
+            <?php } else { ?>
+
+            <tr>
+
+                <td colspan="4"
+                class="no-data">
+
+                    No Expenses Found
+
                 </td>
 
             </tr>
@@ -507,24 +676,38 @@ tr:hover{
 
 </div>
 
-<!-- POPUP MESSAGE -->
+<!-- POPUP -->
 
 <?php if(isset($_SESSION['success'])): ?>
+
 <div id="popup" class="popup">
+
     <?php
-        echo $_SESSION['success'];
-        unset($_SESSION['success']);
+
+    echo $_SESSION['success'];
+
+    unset($_SESSION['success']);
+
     ?>
+
 </div>
+
 <?php endif; ?>
 
 <script>
+
 setTimeout(() => {
-    const popup = document.getElementById("popup");
+
+    const popup =
+    document.getElementById("popup");
+
     if(popup){
+
         popup.style.display = "none";
     }
-}, 3000);
+
+},3000);
+
 </script>
 
 </body>

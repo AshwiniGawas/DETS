@@ -1,14 +1,31 @@
 <?php
+
 $servername = "localhost";
-$username = "root";
-$password = ""; // Default XAMPP password is empty
-$dbname = "expense_tracker";
+$username   = "root";
+$password   = "";
+$dbname     = "expense_tracker";
 
-// Create connection
-$conn = new mysqli($servername, $username, $password, $dbname);
+/* CREATE CONNECTION */
 
-// Check connection
-if ($conn->connect_error) {
-    die("Database Connection Failed: " . $conn->connect_error);
+$conn = new mysqli(
+    $servername,
+    $username,
+    $password,
+    $dbname
+);
+
+/* CHECK CONNECTION */
+
+if($conn->connect_error){
+
+    die(
+        "Database Connection Failed : "
+        . $conn->connect_error
+    );
 }
+
+/* UTF-8 SUPPORT */
+
+$conn->set_charset("utf8mb4");
+
 ?>

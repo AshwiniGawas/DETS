@@ -1,80 +1,231 @@
 <?php
+
 session_start();
+
 require_once 'DETS_db.php';
 
+/* =========================================
+   REDIRECT IF ALREADY LOGGED IN
+========================================= */
+
+if(isset($_SESSION['user_id'])){
+
+    header("Location: DETS_dashboard.php");
+    exit();
+}
+
+/* =========================================
+   VARIABLES
+========================================= */
+
 $username_val = "";
-$email_val = "";
+$email_val    = "";
+
 $errors = [];
 
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $username_val = trim($_POST['username'] ?? '');
-    $email_val = trim($_POST['email'] ?? '');
-    $create_password = trim($_POST['create-password'] ?? '');
-    $confirm_password = trim($_POST['confirm-password'] ?? '');
+/* =========================================
+   FORM SUBMIT
+========================================= */
 
-    if (empty($username_val)) {
-        $errors['username'] = "Username is required";
+if($_SERVER["REQUEST_METHOD"] == "POST"){
+
+    $username_val =
+    trim($_POST['username'] ?? '');
+
+    $email_val =
+    trim($_POST['email'] ?? '');
+
+    $create_password =
+    trim($_POST['create-password'] ?? '');
+
+    $confirm_password =
+    trim($_POST['confirm-password'] ?? '');
+
+    /* =========================================
+       USERNAME VALIDATION
+    ========================================= */
+
+    if(empty($username_val)){
+
+        $errors['username'] =
+        "Username is required";
+    }
+    elseif(strlen($username_val) < 3){
+
+        $errors['username'] =
+        "Username must be at least 3 characters";
     }
 
-    if (empty($email_val)) {
-        $errors['email'] = "Email is required";
-    } elseif (!filter_var($email_val, FILTER_VALIDATE_EMAIL)) {
-        $errors['email'] = "Invalid email format";
+    /* =========================================
+       EMAIL VALIDATION
+    ========================================= */
+
+    if(empty($email_val)){
+
+        $errors['email'] =
+        "Email is required";
+    }
+    elseif(!filter_var(
+        $email_val,
+        FILTER_VALIDATE_EMAIL
+    )){
+
+        $errors['email'] =
+        "Invalid email format";
     }
 
-    if (empty($create_password)) {
-        $errors['create-password'] = "Password is required";
-    } elseif (strlen($create_password) < 6) {
-        $errors['create-password'] = "Password must be at least 6 characters long.";
+    /* =========================================
+       PASSWORD VALIDATION
+    ========================================= */
+
+    if(empty($create_password)){
+
+        $errors['create-password'] =
+        "Password is required";
+    }
+    elseif(strlen($create_password) < 6){
+
+        $errors['create-password'] =
+        "Password must be at least 6 characters";
     }
 
-    if ($confirm_password !== $create_password) {
-        $errors['confirm-password'] = "Passwords do not match!";
+    /* =========================================
+       CONFIRM PASSWORD
+    ========================================= */
+
+    if($confirm_password != $create_password){
+
+        $errors['confirm-password'] =
+        "Passwords do not match";
     }
 
-    if (empty($errors)) {
-        $stmt = $conn->prepare("SELECT id FROM users WHERE username = ? OR email = ?");
-        $stmt->bind_param("ss", $username_val, $email_val);
-        $stmt->execute();
-        $stmt->store_result();
+    /* =========================================
+       CHECK EXISTING USER
+    ========================================= */
 
-        if ($stmt->num_rows > 0) {
-            $errors['username'] = "Username or Email already taken.";
-            $stmt->close();
-        } else {
-            $stmt->close();
-            $hashed_password = password_hash($create_password, PASSWORD_DEFAULT);
-            
-            $insert = $conn->prepare("INSERT INTO users (username, email, password) VALUES (?, ?, ?)");
-            $insert->bind_param("sss", $username_val, $email_val, $hashed_password);
-            
-            if ($insert->execute()) {
-                /* STORE SESSION */
-                $_SESSION['user_id'] = $insert->insert_id;
-                /* STORE USERNAME */
-                $_SESSION['user_name'] = $username_val;
-                /* SUCCESS POPUP MESSAGE */
-                $_SESSION['success'] = "Registration Successful!";
+    if(empty($errors)){
+
+        $checkUser =
+        $conn->prepare("
+            SELECT id
+            FROM users
+            WHERE username = ?
+            OR email = ?
+        ");
+
+        $checkUser->bind_param(
+            "ss",
+            $username_val,
+            $email_val
+        );
+
+        $checkUser->execute();
+
+        $checkUser->store_result();
+
+        if($checkUser->num_rows > 0){
+
+            $errors['username'] =
+            "Username or Email already exists";
+
+            $checkUser->close();
+        }
+        else{
+
+            $checkUser->close();
+
+            /* =========================================
+               HASH PASSWORD
+            ========================================= */
+
+            $hashed_password =
+            password_hash(
+                $create_password,
+                PASSWORD_DEFAULT
+            );
+
+            /* =========================================
+               INSERT USER
+            ========================================= */
+
+            $insert =
+            $conn->prepare("
+                INSERT INTO users
+                (
+                    username,
+                    email,
+                    password
+                )
+                VALUES
+                (
+                    ?,
+                    ?,
+                    ?
+                )
+            ");
+
+            $insert->bind_param(
+                "sss",
+                $username_val,
+                $email_val,
+                $hashed_password
+            );
+
+            if($insert->execute()){
+
+                /* =========================================
+                   CREATE SESSION
+                ========================================= */
+
+                $_SESSION['user_id'] =
+                $insert->insert_id;
+
+                $_SESSION['user_name'] =
+                $username_val;
+
+                $_SESSION['success'] =
+                "Registration Successful!";
+
                 $insert->close();
-                /* REDIRECT */
-                header("Location: DETS_dashboard.php");
+
+                header(
+                    "Location: DETS_dashboard.php"
+                );
+
                 exit();
-} else {
-                $errors['db'] = "Registration failed. Try again.";
+            }
+            else{
+
+                $errors['db'] =
+                "Registration failed";
+
                 $insert->close();
             }
         }
     }
 }
+
 ?>
 
 <!DOCTYPE html>
-<html>
+
+<html lang="en">
+
 <head>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css">
-    <title>SignUp</title>
-    <style>
-        html, body {
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+content="width=device-width, initial-scale=1.0">
+
+<title>Sign Up</title>
+
+<link rel="stylesheet"
+href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+<style>
+
+html, body {
             height: 100%;
             margin: 0;
             font-family: Arial, sans-serif;
@@ -170,35 +321,142 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         p {
             text-align: center;
         }
+
     </style>
+
 </head>
+
 <body>
 
 <form method="POST">
-    <img src="DETS_logo_image.jpeg" class="logo">
+
+    <img src="DETS_logo_image.jpeg"
+         class="logo">
+
     <h2><b>Daily Expense Tracking System</b></h2>
-    
-    <div class="error"><?php echo $errors['db'] ?? '' ?></div>
 
-    <label><i class="fa-solid fa-user"></i> Username:</label><br>
-    <input type="text" name="username" value="<?php echo htmlspecialchars($username_val); ?>">
-    <div class="error"><?php echo $errors['username'] ?? '' ?></div>
+    <div class="error">
 
-    <label><i class="fa-solid fa-envelope"></i> Email:</label><br>
-    <input type="text" name="email" value="<?php echo htmlspecialchars($email_val); ?>">
-    <div class="error"><?php echo $errors['email'] ?? '' ?></div>
+        <?php
+        echo $errors['db'] ?? '';
+        ?>
 
-    <label><i class="fa-solid fa-lock"></i> Create Password:</label><br>
-    <input type="password" name="create-password">
-    <div class="error"><?php echo $errors['create-password'] ?? '' ?></div>
+    </div>
 
-    <label><i class="fa-solid fa-lock"></i> Confirm Password:</label><br>
-    <input type="password" name="confirm-password">
-    <div class="error"><?php echo $errors['confirm-password'] ?? '' ?></div>
+    <!-- USERNAME -->
 
-    <input class="btn" type="submit" value="SignUp">
-    <p>Already have an account? <a href="DETS_login_page.php">Login</a></p>
+    <label>
+        <i class="fa-solid fa-user"></i>
+        Username
+    </label>
+
+    <input
+        type="text"
+        name="username"
+
+        value="<?php
+        echo htmlspecialchars(
+            $username_val
+        );
+        ?>"
+    >
+
+    <div class="error">
+
+        <?php
+        echo $errors['username'] ?? '';
+        ?>
+
+    </div>
+
+    <!-- EMAIL -->
+
+    <label>
+        <i class="fa-solid fa-envelope"></i>
+        Email
+    </label>
+
+    <input
+        type="text"
+        name="email"
+
+        value="<?php
+        echo htmlspecialchars(
+            $email_val
+        );
+        ?>"
+    >
+
+    <div class="error">
+
+        <?php
+        echo $errors['email'] ?? '';
+        ?>
+
+    </div>
+
+    <!-- PASSWORD -->
+
+    <label>
+        <i class="fa-solid fa-lock"></i>
+        Create Password
+    </label>
+
+    <input
+        type="password"
+        name="create-password"
+    >
+
+    <div class="error">
+
+        <?php
+        echo $errors['create-password'] ?? '';
+        ?>
+
+    </div>
+
+    <!-- CONFIRM PASSWORD -->
+
+    <label>
+        <i class="fa-solid fa-lock"></i>
+        Confirm Password
+    </label>
+
+    <input
+        type="password"
+        name="confirm-password"
+    >
+
+    <div class="error">
+
+        <?php
+        echo $errors['confirm-password'] ?? '';
+        ?>
+
+    </div>
+
+    <!-- BUTTON -->
+
+    <input
+        type="submit"
+        value="Sign Up"
+        class="btn"
+    >
+
+    <p>
+
+        Already have an account?
+
+        <a href="DETS_login_page.php">
+
+            Login
+
+        </a>
+
+    </p>
+
 </form>
 
 </body>
+
 </html>

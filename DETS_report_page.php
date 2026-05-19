@@ -6,59 +6,91 @@ if (session_status() === PHP_SESSION_NONE) {
 
 include 'DETS_db.php';
 
-/* =========================
-   REPORT TYPE
-========================= */
+/* =========================================
+   CHECK LOGIN
+========================================= */
+
+if (!isset($_SESSION['user_id'])) {
+
+    header("Location: DETS_login_page.php");
+    exit();
+}
+
+$user_id = $_SESSION['user_id'];
+
+/* =========================================
+   REPORT SETTINGS
+========================================= */
 
 $reportType = $_GET['report_type'] ?? 'monthly';
 
 $selectedMonth = $_GET['month'] ?? date('m');
 
+$selectedYear = date('Y');
+
 $selectedWeek = $_GET['week'] ?? 1;
 
-/* =========================
-   GET ALL CATEGORIES
-========================= */
-
-$categoryQuery = $conn->query("
-    SELECT DISTINCT category
-    FROM expenses
-");
+/* =========================================
+   GET USER CATEGORIES
+========================================= */
 
 $categories = [];
 
-while($cat = $categoryQuery->fetch_assoc()){
+$categoryStmt = $conn->prepare("
+    SELECT DISTINCT category
+    FROM expenses
+    WHERE user_id = ?
+    ORDER BY category ASC
+");
+
+$categoryStmt->bind_param("i", $user_id);
+
+$categoryStmt->execute();
+
+$categoryResult = $categoryStmt->get_result();
+
+while($cat = $categoryResult->fetch_assoc()){
 
     $categories[] = $cat['category'];
 }
 
-/* =========================
-   WEEK CONDITIONS
-========================= */
+$categoryStmt->close();
 
-if($selectedWeek == 1){
+/* =========================================
+   WEEK CONDITION
+========================================= */
 
-    $weekCondition = "DAY(expense_date) BETWEEN 1 AND 7";
+switch($selectedWeek){
+
+    case 1:
+        $weekCondition =
+        "DAY(expense_date) BETWEEN 1 AND 7";
+        break;
+
+    case 2:
+        $weekCondition =
+        "DAY(expense_date) BETWEEN 8 AND 14";
+        break;
+
+    case 3:
+        $weekCondition =
+        "DAY(expense_date) BETWEEN 15 AND 21";
+        break;
+
+    default:
+        $weekCondition =
+        "DAY(expense_date) BETWEEN 22 AND 31";
+        break;
 }
-elseif($selectedWeek == 2){
 
-    $weekCondition = "DAY(expense_date) BETWEEN 8 AND 14";
-}
-elseif($selectedWeek == 3){
-
-    $weekCondition = "DAY(expense_date) BETWEEN 15 AND 21";
-}
-else{
-
-    $weekCondition = "DAY(expense_date) BETWEEN 22 AND 31";
-}
-
-/* =========================
+/* =========================================
    VARIABLES
-========================= */
+========================================= */
 
 $highestCategory = "";
 $highestAmount = 0;
+
+$highestRow = "";
 
 $monthlyData = [];
 $monthlyTotals = [];
@@ -67,6 +99,10 @@ $weeklyData = [];
 $weeklyTotals = [];
 
 $weekTotals = [];
+
+$dayTotals = [];
+
+$insights = [];
 
 $weekDays = [
     "Sunday",
@@ -78,357 +114,357 @@ $weekDays = [
     "Saturday"
 ];
 
-/* =========================
+/* =========================================
+   INITIALIZE TOTALS
+========================================= */
+
+foreach($categories as $category){
+
+    $monthlyTotals[$category] = 0;
+    $weeklyTotals[$category] = 0;
+}
+
+/* =========================================
    MONTHLY REPORT
-========================= */
+========================================= */
 
 if($reportType == "monthly"){
 
-    for($week=1;$week<=4;$week++){
+    for($week = 1; $week <= 4; $week++){
 
-        if($week == 1){
-            $condition = "DAY(expense_date) BETWEEN 1 AND 7";
+        switch($week){
+
+            case 1:
+                $condition =
+                "DAY(expense_date) BETWEEN 1 AND 7";
+                break;
+
+            case 2:
+                $condition =
+                "DAY(expense_date) BETWEEN 8 AND 14";
+                break;
+
+            case 3:
+                $condition =
+                "DAY(expense_date) BETWEEN 15 AND 21";
+                break;
+
+            default:
+                $condition =
+                "DAY(expense_date) BETWEEN 22 AND 31";
+                break;
         }
-        elseif($week == 2){
-            $condition = "DAY(expense_date) BETWEEN 8 AND 14";
-        }
-        elseif($week == 3){
-            $condition = "DAY(expense_date) BETWEEN 15 AND 21";
-        }
-        else{
-            $condition = "DAY(expense_date) BETWEEN 22 AND 31";
-        }
+
+        $monthlyData[$week] = [];
 
         foreach($categories as $category){
 
-            $query = $conn->query("
+            $stmt = $conn->prepare("
                 SELECT SUM(amount) AS total
                 FROM expenses
-                WHERE MONTH(expense_date) = '$selectedMonth'
+                WHERE user_id = ?
+                AND MONTH(expense_date) = ?
+                AND YEAR(expense_date) = ?
                 AND $condition
-                AND category = '$category'
+                AND category = ?
             ");
 
-            $row = $query->fetch_assoc();
+            $stmt->bind_param(
+                "iiis",
+                $user_id,
+                $selectedMonth,
+                $selectedYear,
+                $category
+            );
+
+            $stmt->execute();
+
+            $result = $stmt->get_result();
+
+            $row = $result->fetch_assoc();
 
             $amount = $row['total'] ?? 0;
 
             $monthlyData[$week][$category] = $amount;
 
-            if(!isset($monthlyTotals[$category])){
-                $monthlyTotals[$category] = 0;
-            }
-
             $monthlyTotals[$category] += $amount;
+
+            $stmt->close();
         }
 
         $weekTotals[$week] =
         array_sum($monthlyData[$week]);
     }
 
-    /* HIGHEST CATEGORY */
+    /* =========================================
+       HIGHEST WEEK
+    ========================================= */
 
-    $highestQuery = $conn->query("
+    if(!empty($weekTotals)){
+
+        $maxWeekAmount = max($weekTotals);
+
+        if($maxWeekAmount > 0){
+
+            $highestRow =
+            array_keys(
+                $weekTotals,
+                $maxWeekAmount
+            )[0];
+        }
+    }
+
+    /* =========================================
+       HIGHEST CATEGORY
+    ========================================= */
+
+    $highestStmt = $conn->prepare("
         SELECT category,
         SUM(amount) AS total
         FROM expenses
-        WHERE MONTH(expense_date) = '$selectedMonth'
+        WHERE user_id = ?
+        AND MONTH(expense_date) = ?
+        AND YEAR(expense_date) = ?
         GROUP BY category
         ORDER BY total DESC
         LIMIT 1
     ");
 
-    if($highestQuery->num_rows > 0){
+    $highestStmt->bind_param(
+        "iii",
+        $user_id,
+        $selectedMonth,
+        $selectedYear
+    );
 
-        $highest = $highestQuery->fetch_assoc();
+    $highestStmt->execute();
 
-        $highestCategory = $highest['category'];
-        $highestAmount = $highest['total'];
+    $highestResult =
+    $highestStmt->get_result();
+
+    if($highestResult->num_rows > 0){
+
+        $highest =
+        $highestResult->fetch_assoc();
+
+        $highestCategory =
+        $highest['category'];
+
+        $highestAmount =
+        $highest['total'];
     }
+
+    $highestStmt->close();
 }
 
-/* =========================
+/* =========================================
    WEEKLY REPORT
-========================= */
+========================================= */
 
 if($reportType == "weekly"){
 
     foreach($weekDays as $day){
 
+        $weeklyData[$day] = [];
+
         foreach($categories as $category){
 
-            $query = $conn->query("
+            $stmt = $conn->prepare("
                 SELECT SUM(amount) AS total
                 FROM expenses
-                WHERE MONTH(expense_date) = '$selectedMonth'
+                WHERE user_id = ?
+                AND MONTH(expense_date) = ?
+                AND YEAR(expense_date) = ?
                 AND $weekCondition
-                AND DAYNAME(expense_date) = '$day'
-                AND category = '$category'
+                AND DAYNAME(expense_date) = ?
+                AND category = ?
             ");
 
-            $row = $query->fetch_assoc();
+            $stmt->bind_param(
+                "iiiss",
+                $user_id,
+                $selectedMonth,
+                $selectedYear,
+                $day,
+                $category
+            );
+
+            $stmt->execute();
+
+            $result = $stmt->get_result();
+
+            $row = $result->fetch_assoc();
 
             $amount = $row['total'] ?? 0;
 
             $weeklyData[$day][$category] = $amount;
 
-            if(!isset($weeklyTotals[$category])){
-                $weeklyTotals[$category] = 0;
-            }
-
             $weeklyTotals[$category] += $amount;
+
+            $stmt->close();
+        }
+
+        $dayTotals[$day] =
+        array_sum($weeklyData[$day]);
+    }
+
+    /* =========================================
+       HIGHEST DAY
+    ========================================= */
+
+    if(!empty($dayTotals)){
+
+        $maxDayAmount = max($dayTotals);
+
+        if($maxDayAmount > 0){
+
+            $highestRow =
+            array_keys(
+                $dayTotals,
+                $maxDayAmount
+            )[0];
         }
     }
 
-    /* HIGHEST CATEGORY */
+    /* =========================================
+       HIGHEST CATEGORY
+    ========================================= */
 
-    $highestQuery = $conn->query("
+    $highestStmt = $conn->prepare("
         SELECT category,
         SUM(amount) AS total
         FROM expenses
-        WHERE MONTH(expense_date) = '$selectedMonth'
+        WHERE user_id = ?
+        AND MONTH(expense_date) = ?
+        AND YEAR(expense_date) = ?
         AND $weekCondition
         GROUP BY category
         ORDER BY total DESC
         LIMIT 1
     ");
 
-    if($highestQuery->num_rows > 0){
+    $highestStmt->bind_param(
+        "iii",
+        $user_id,
+        $selectedMonth,
+        $selectedYear
+    );
 
-        $highest = $highestQuery->fetch_assoc();
+    $highestStmt->execute();
 
-        $highestCategory = $highest['category'];
-        $highestAmount = $highest['total'];
+    $highestResult =
+    $highestStmt->get_result();
+
+    if($highestResult->num_rows > 0){
+
+        $highest =
+        $highestResult->fetch_assoc();
+
+        $highestCategory =
+        $highest['category'];
+
+        $highestAmount =
+        $highest['total'];
+    }
+
+    $highestStmt->close();
+}
+
+/* =========================================
+   CHECK DATA
+========================================= */
+
+$hasExpenses = false;
+
+if($reportType == "monthly"){
+
+    foreach($monthlyTotals as $total){
+
+        if($total > 0){
+
+            $hasExpenses = true;
+            break;
+        }
     }
 }
 
-/* =========================
-   INSIGHTS
-========================= */
+if($reportType == "weekly"){
 
-$insights = [];
+    foreach($weeklyTotals as $total){
 
-if($highestCategory != ""){
+        if($total > 0){
 
-    $insights[] =
-    "You spent most on $highestCategory.";
+            $hasExpenses = true;
+            break;
+        }
+    }
 }
 
-if(!empty($weekTotals)){
+/* =========================================
+   INSIGHTS
+========================================= */
 
-    $highestWeek =
-    array_keys($weekTotals,max($weekTotals))[0];
+if($hasExpenses){
 
-    $insights[] =
-    "Week $highestWeek had the highest expenses.";
+    if($highestCategory != ""){
+
+        $insights[] =
+        "You spent the most on " .
+        $highestCategory .
+        " (₹" .
+        number_format($highestAmount,2) .
+        ").";
+    }
+
+    if($reportType == "monthly" && $highestRow != ""){
+
+        $insights[] =
+        "Week " .
+        $highestRow .
+        " had the highest expenses.";
+    }
+
+    if($reportType == "weekly" && $highestRow != ""){
+
+        $insights[] =
+        $highestRow .
+        " had the highest expenses.";
+    }
 }
 
 ?>
 
 <!DOCTYPE html>
+
 <html lang="en">
 
 <head>
 
 <meta charset="UTF-8">
+
 <meta name="viewport"
 content="width=device-width, initial-scale=1.0">
 
 <title>Expense Reports</title>
 
 <link rel="stylesheet"
+href="DETS_style.css">
+
+<link rel="stylesheet"
 href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
 <style>
 
-*{
-    margin:0;
-    padding:0;
-    box-sizing:border-box;
-    font-family:'Segoe UI',sans-serif;
-}
-
-body{
-    display:flex;
-    background:#f4f7fe;
-    min-height:100vh;
-}
-
-/* SIDEBAR */
-
-.sidebar{
-    width:250px;
-    background:#1e293b;
-    color:white;
-    padding:25px 20px;
-    position:fixed;
-    height:100%;
-}
-
-.sidebar h2{
-    text-align:center;
-    margin-bottom:40px;
-    font-size:28px;
-}
-
-.sidebar a{
-    display:block;
-    color:#cbd5e1;
-    text-decoration:none;
-    padding:14px 16px;
-    margin-bottom:12px;
-    border-radius:10px;
-    transition:0.3s;
-}
-
-.sidebar a:hover{
-    background:#3b82f6;
-    color:white;
-}
-
-/* MAIN */
-
-.main{
-    margin-left:250px;
-    width:calc(100% - 250px);
-    padding:30px;
-}
-
-/* TOPBAR */
-
-.topbar{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    margin-bottom:30px;
-}
-
-.topbar h1{
-    font-size:32px;
+.highlight-column{
+    background:#bfdbfe !important;
     color:#1e293b;
-}
-
-/* USER ACTIONS */
-
-.user-actions{
-    display:flex;
-    align-items:center;
-    gap:12px;
-}
-
-.profile-icon{
-    font-size:32px;
-    text-decoration:none;
-    color:#1e293b;
-}
-
-.auth-btn{
-    padding:10px 18px;
-    border-radius:8px;
-    text-decoration:none;
-    font-size:14px;
-    font-weight:600;
-    transition:0.3s;
-}
-
-.btn-login{
-    background:white;
-    border:1px solid #3b82f6;
-    color:#3b82f6;
-}
-
-.btn-register{
-    background:#3b82f6;
-    border:1px solid #3b82f6;
-    color:white;
-}
-
-.btn-logout{
-    background:#ef4444;
-    border:1px solid #ef4444;
-    color:white;
-}
-
-.auth-btn:hover{
-    opacity:0.85;
-}
-
-/* FILTER */
-
-.filter-box{
-    background:white;
-    padding:25px;
-    border-radius:18px;
-    margin-bottom:30px;
-    box-shadow:0 6px 18px rgba(0,0,0,0.08);
-}
-
-.filter-grid{
-    display:flex;
-    gap:15px;
-    flex-wrap:wrap;
-    align-items:center;
-}
-
-select{
-    padding:12px;
-    border-radius:10px;
-    border:1px solid #d1d5db;
-    min-width:180px;
-}
-
-button{
-    background:#3b82f6;
-    color:white;
-    border:none;
-    padding:12px 20px;
-    border-radius:10px;
-    cursor:pointer;
-    font-weight:600;
-}
-
-button:hover{
-    background:#2563eb;
-}
-
-/* TABLE */
-
-.table-container{
-    background:white;
-    padding:25px;
-    border-radius:18px;
-    box-shadow:0 6px 18px rgba(0,0,0,0.08);
-    overflow-x:auto;
-}
-
-table{
-    width:100%;
-    border-collapse:collapse;
-}
-
-th{
-    background:#eff6ff;
-    color:#1e293b;
-    padding:14px;
-    text-align:center;
-}
-
-td{
-    padding:14px;
-    border-bottom:1px solid #e5e7eb;
-    text-align:center;
-}
-
-tr:hover{
-    background:#f9fafb;
-}
-
-.total-row{
-    background:#dbeafe;
     font-weight:bold;
 }
 
-/* HEATMAP */
+.highlight-row td{
+    background:#dbeafe !important;
+    font-weight:bold;
+}
 
 .low{
     background:#dcfce7;
@@ -442,62 +478,6 @@ tr:hover{
     background:#fecaca;
 }
 
-/* HIGHEST CATEGORY COLUMN */
-
-.highlight-column{
-    background:#bfdbfe !important;
-    font-weight:bold;
-}
-
-/* INSIGHTS */
-
-.insight-box{
-    margin-top:25px;
-    background:white;
-    padding:20px;
-    border-radius:16px;
-    box-shadow:0 6px 18px rgba(0,0,0,0.08);
-}
-
-.insight-box h3{
-    margin-bottom:15px;
-}
-
-.insight-item{
-    background:#eff6ff;
-    padding:14px;
-    border-left:5px solid #3b82f6;
-    margin-bottom:12px;
-    border-radius:10px;
-    font-weight:600;
-}
-
-/* RESPONSIVE */
-
-@media(max-width:768px){
-
-    body{
-        flex-direction:column;
-    }
-
-    .sidebar{
-        width:100%;
-        position:relative;
-        height:auto;
-    }
-
-    .main{
-        margin-left:0;
-        width:100%;
-    }
-
-    .topbar{
-        flex-direction:column;
-        gap:15px;
-        align-items:flex-start;
-    }
-}
-
 </style>
 
 </head>
@@ -508,27 +488,27 @@ tr:hover{
 
 <div class="sidebar">
 
-<h2>DETS</h2>
+    <h2>DETS</h2>
 
-<a href="DETS_dashboard.php">
-<i class="fa-solid fa-chart-line"></i>
-Dashboard
-</a>
+    <a href="DETS_dashboard.php">
+        <i class="fa-solid fa-chart-line"></i>
+        Dashboard
+    </a>
 
-<a href="DETS_expense_page.php">
-<i class="fa-solid fa-wallet"></i>
-Expenses
-</a>
+    <a href="DETS_expense_page.php">
+        <i class="fa-solid fa-wallet"></i>
+        Expenses
+    </a>
 
-<a href="DETS_chart_page.php">
-<i class="fa-solid fa-chart-pie"></i>
-Charts
-</a>
+    <a href="DETS_chart_page.php">
+        <i class="fa-solid fa-chart-pie"></i>
+        Charts
+    </a>
 
-<a href="DETS_report_page.php">
-<i class="fa-solid fa-file-lines"></i>
-Reports
-</a>
+    <a href="DETS_report_page.php">
+        <i class="fa-solid fa-file-lines"></i>
+        Reports
+    </a>
 
 </div>
 
@@ -536,320 +516,371 @@ Reports
 
 <div class="main">
 
-<div class="topbar">
+    <!-- TOPBAR -->
 
-<h1>Expense Reports</h1>
+    <div class="topbar">
 
-<div class="user-actions">
+        <h1>Expense Reports</h1>
 
-<?php if(isset($_SESSION['user_id'])): ?>
+        <div class="user-actions">
 
-<a href="DETS_profile_page.php"
-class="profile-icon">
+            <a href="DETS_profile_page.php"
+               class="profile-icon">
 
-<i class="fa-solid fa-circle-user"></i>
+               <i class="fa-solid fa-circle-user"></i>
 
-</a>
+            </a>
 
-<a href="DETS_logout.php"
-class="auth-btn btn-logout">
+            <a href="DETS_logout.php"
+               class="auth-btn btn-logout">
 
-Logout
+               Logout
 
-</a>
+            </a>
 
-<?php else: ?>
+        </div>
 
-<a href="DETS_login_page.php"
-class="auth-btn btn-login">
+    </div>
 
-Login
+    <!-- FILTER -->
 
-</a>
+    <div class="form-container">
 
-<a href="DETS_signuppage.php"
-class="auth-btn btn-register">
+        <h2>Generate Report</h2>
 
-Register
+        <form method="GET">
 
-</a>
+            <div class="form-grid">
 
-<?php endif; ?>
+                <select name="report_type"
+                        onchange="toggleWeek(this.value)">
 
-</div>
+                    <option value="monthly"
+                    <?php
+                    if($reportType=="monthly")
+                    echo "selected";
+                    ?>>
+                    Monthly Report
+                    </option>
 
-</div>
+                    <option value="weekly"
+                    <?php
+                    if($reportType=="weekly")
+                    echo "selected";
+                    ?>>
+                    Weekly Report
+                    </option>
 
-<!-- FILTER -->
+                </select>
 
-<div class="filter-box">
+                <select name="month">
 
-<form method="GET">
+                    <?php for($m=1;$m<=12;$m++){ ?>
 
-<div class="filter-grid">
+                    <option value="<?php echo $m; ?>"
+                    <?php
+                    if($selectedMonth==$m)
+                    echo "selected";
+                    ?>>
 
-<select name="report_type"
-onchange="toggleWeek(this.value)">
+                    <?php
+                    echo date(
+                        "F",
+                        mktime(0,0,0,$m,1)
+                    );
+                    ?>
 
-<option value="monthly"
-<?php if($reportType=="monthly") echo "selected"; ?>>
-Monthly Report
-</option>
+                    </option>
 
-<option value="weekly"
-<?php if($reportType=="weekly") echo "selected"; ?>>
-Weekly Report
-</option>
+                    <?php } ?>
 
-</select>
+                </select>
 
-<select name="month">
+                <select name="week"
+                        id="weekBox"
+                        <?php
+                        if($reportType=="monthly")
+                        echo "style='display:none;'";
+                        ?>>
 
-<?php for($m=1;$m<=12;$m++){ ?>
+                    <option value="1">Week 1</option>
+                    <option value="2">Week 2</option>
+                    <option value="3">Week 3</option>
+                    <option value="4">Week 4</option>
 
-<option value="<?php echo $m; ?>"
-<?php if($selectedMonth==$m) echo "selected"; ?>>
+                </select>
 
-<?php echo date("F",mktime(0,0,0,$m,1)); ?>
+                <button type="submit">
 
-</option>
+                    Generate Report
 
-<?php } ?>
+                </button>
 
-</select>
+            </div>
 
-<select name="week"
-id="weekBox"
-<?php
-if($reportType=="monthly")
-echo "style='display:none;'";
-?>>
+        </form>
 
-<option value="1">Week 1</option>
-<option value="2">Week 2</option>
-<option value="3">Week 3</option>
-<option value="4">Week 4</option>
+    </div>
 
-</select>
+    <!-- NO DATA -->
 
-<button type="submit">
-Generate Report
-</button>
+    <?php if(empty($categories)){ ?>
 
-</div>
+    <div class="danger">
 
-</form>
+        No expenses found.
+        Add expenses first to view reports.
 
-</div>
+    </div>
 
-<!-- TABLE -->
+    <?php } ?>
 
-<div class="table-container">
+    <!-- REPORT TABLE -->
 
-<table>
+    <?php if(!empty($categories)){ ?>
 
-<tr>
+    <div class="table-container">
 
-<th>
+        <table>
 
-<?php
-echo ($reportType=="monthly")
-? "Week"
-: "Day";
-?>
+            <tr>
 
-</th>
+                <th>
 
-<?php foreach($categories as $category){ ?>
+                    <?php
+                    echo ($reportType=="monthly")
+                    ? "Week"
+                    : "Day";
+                    ?>
 
-<th class="<?php
-if($category==$highestCategory)
-echo 'highlight-column';
-?>">
+                </th>
 
-<?php echo $category; ?>
+                <?php foreach($categories as $category){ ?>
 
-</th>
+                <th class="<?php
+                if($category==$highestCategory)
+                echo 'highlight-column';
+                ?>">
 
-<?php } ?>
+                    <?php
+                    echo htmlspecialchars($category);
+                    ?>
 
-<th class="total-row">Total</th>
+                </th>
 
-</tr>
+                <?php } ?>
 
-<!-- MONTHLY REPORT -->
+                <th class="total-row">
+                    Total
+                </th>
 
-<?php if($reportType=="monthly"){ ?>
+            </tr>
 
-<?php for($week=1;$week<=4;$week++){ ?>
+            <!-- MONTHLY REPORT -->
 
-<tr>
+            <?php if($reportType=="monthly"){ ?>
 
-<td>Week <?php echo $week; ?></td>
+            <?php for($week=1;$week<=4;$week++){ ?>
 
-<?php
+            <tr class="<?php
+            if($highestRow == $week)
+            echo 'highlight-row';
+            ?>">
 
-$rowTotal = 0;
+                <td>
 
-foreach($categories as $category){
+                    Week <?php echo $week; ?>
 
-$amount =
-$monthlyData[$week][$category];
+                </td>
 
-$rowTotal += $amount;
+                <?php
 
-$class = "low";
+                $rowTotal = 0;
 
-if($amount > 5000){
-$class = "high";
-}
-elseif($amount > 2000){
-$class = "medium";
-}
+                foreach($categories as $category){
 
-?>
+                    $amount =
+                    $monthlyData[$week][$category] ?? 0;
 
-<td class="<?php echo $class; ?> <?php
-if($category==$highestCategory)
-echo 'highlight-column';
-?>">
+                    $rowTotal += $amount;
 
-₹<?php echo number_format($amount,2); ?>
+                    $class = "low";
 
-</td>
+                    if($amount > 5000){
 
-<?php } ?>
+                        $class = "high";
 
-<td class="total-row">
+                    }elseif($amount > 2000){
 
-₹<?php echo number_format($rowTotal,2); ?>
+                        $class = "medium";
+                    }
 
-</td>
+                ?>
 
-</tr>
+                <td class="<?php echo $class; ?> <?php
+                if($category==$highestCategory)
+                echo 'highlight-column';
+                ?>">
 
-<?php } ?>
+                    ₹<?php echo number_format($amount,2); ?>
 
-<?php } ?>
+                </td>
 
-<!-- WEEKLY REPORT -->
+                <?php } ?>
 
-<?php if($reportType=="weekly"){ ?>
+                <td class="total-row">
 
-<?php foreach($weekDays as $day){ ?>
+                    ₹<?php echo number_format($rowTotal,2); ?>
 
-<tr>
+                </td>
 
-<td><?php echo $day; ?></td>
+            </tr>
 
-<?php
+            <?php } ?>
 
-$rowTotal = 0;
+            <?php } ?>
 
-foreach($categories as $category){
+            <!-- WEEKLY REPORT -->
 
-$amount =
-$weeklyData[$day][$category];
+            <?php if($reportType=="weekly"){ ?>
 
-$rowTotal += $amount;
+            <?php foreach($weekDays as $day){ ?>
 
-$class = "low";
+            <tr class="<?php
+            if($highestRow == $day)
+            echo 'highlight-row';
+            ?>">
 
-if($amount > 3000){
-$class = "high";
-}
-elseif($amount > 1000){
-$class = "medium";
-}
+                <td>
 
-?>
+                    <?php echo $day; ?>
 
-<td class="<?php echo $class; ?> <?php
-if($category==$highestCategory)
-echo 'highlight-column';
-?>">
+                </td>
 
-₹<?php echo number_format($amount,2); ?>
+                <?php
 
-</td>
+                $rowTotal = 0;
 
-<?php } ?>
+                foreach($categories as $category){
 
-<td class="total-row">
+                    $amount =
+                    $weeklyData[$day][$category] ?? 0;
 
-₹<?php echo number_format($rowTotal,2); ?>
+                    $rowTotal += $amount;
 
-</td>
+                    $class = "low";
 
-</tr>
+                    if($amount > 3000){
 
-<?php } ?>
+                        $class = "high";
 
-<?php } ?>
+                    }elseif($amount > 1000){
 
-<!-- TOTAL ROW -->
+                        $class = "medium";
+                    }
 
-<tr class="total-row">
+                ?>
 
-<td>Total</td>
+                <td class="<?php echo $class; ?> <?php
+                if($category==$highestCategory)
+                echo 'highlight-column';
+                ?>">
 
-<?php
+                    ₹<?php echo number_format($amount,2); ?>
 
-$grandTotal = 0;
+                </td>
 
-foreach($categories as $category){
+                <?php } ?>
 
-$total =
-($reportType=="monthly")
-? $monthlyTotals[$category]
-: $weeklyTotals[$category];
+                <td class="total-row">
 
-$grandTotal += $total;
+                    ₹<?php echo number_format($rowTotal,2); ?>
 
-?>
+                </td>
 
-<td>
+            </tr>
 
-₹<?php echo number_format($total,2); ?>
+            <?php } ?>
 
-</td>
+            <?php } ?>
 
-<?php } ?>
+            <!-- TOTAL ROW -->
 
-<td>
+            <tr class="total-row">
 
-₹<?php echo number_format($grandTotal,2); ?>
+                <td>Total</td>
 
-</td>
+                <?php
 
-</tr>
+                $grandTotal = 0;
 
-</table>
+                foreach($categories as $category){
 
-</div>
+                    $total =
+                    ($reportType=="monthly")
+                    ? ($monthlyTotals[$category] ?? 0)
+                    : ($weeklyTotals[$category] ?? 0);
 
-<!-- INSIGHTS -->
+                    $grandTotal += $total;
 
-<div class="insight-box">
+                ?>
 
-<h3>
+                <td>
 
-<i class="fa-solid fa-lightbulb"></i>
-Expense Insights
+                    ₹<?php echo number_format($total,2); ?>
 
-</h3>
+                </td>
 
-<?php foreach($insights as $msg){ ?>
+                <?php } ?>
 
-<div class="insight-item">
+                <td>
 
-<?php echo $msg; ?>
+                    ₹<?php echo number_format($grandTotal,2); ?>
 
-</div>
+                </td>
 
-<?php } ?>
+            </tr>
 
-</div>
+        </table>
+
+    </div>
+
+    <?php } ?>
+
+    <!-- INSIGHTS -->
+
+    <div class="insight-box">
+
+        <h3>
+
+            <i class="fa-solid fa-lightbulb"></i>
+            Expense Insights
+
+        </h3>
+
+        <?php if(!empty($insights)){ ?>
+
+            <?php foreach($insights as $msg){ ?>
+
+            <div class="insight-item">
+
+                <?php echo $msg; ?>
+
+            </div>
+
+            <?php } ?>
+
+        <?php } else { ?>
+
+            <div class="insight-item">
+
+                No expense insights available yet.
+
+            </div>
+
+        <?php } ?>
+
+    </div>
 
 </div>
 
@@ -857,17 +888,17 @@ Expense Insights
 
 function toggleWeek(value){
 
-let weekBox =
-document.getElementById('weekBox');
+    let weekBox =
+    document.getElementById('weekBox');
 
-if(value == "weekly"){
+    if(value == "weekly"){
 
-weekBox.style.display = "block";
+        weekBox.style.display = "block";
 
-}else{
+    }else{
 
-weekBox.style.display = "none";
-}
+        weekBox.style.display = "none";
+    }
 }
 
 </script>

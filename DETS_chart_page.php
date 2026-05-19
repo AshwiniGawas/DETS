@@ -1,109 +1,159 @@
 <?php
 session_start();
+require_once 'DETS_db.php';
 
-include 'DETS_db.php';
+/* =========================================
+   CHECK LOGIN
+========================================= */
+
+if (!isset($_SESSION['user_id'])) {
+
+    header("Location: DETS_login_page.php");
+    exit();
+
+}
+
+/* =========================================
+   USER ID
+========================================= */
+
+$user_id = $_SESSION['user_id'];
+
+/* =========================================
+   ACTIVE TAB
+========================================= */
 
 $activeTab = "totalTab";
 
-if(isset($_GET['month'])){
+if (isset($_GET['month'])) {
+
     $activeTab = "monthlyTab";
+
 }
 
-if(isset($_GET['week_month']) || isset($_GET['week'])){
+if (isset($_GET['week_month']) || isset($_GET['week'])) {
+
     $activeTab = "weeklyTab";
+
 }
 
-/* TOTAL EXPENSE CHART DATA */
+/* =========================================
+   TOTAL EXPENSE CHART DATA
+   ONLY CURRENT USER
+========================================= */
 
-$totalChart = $conn->query("
+$totalStmt = $conn->prepare("
     SELECT category, SUM(amount) AS total
     FROM expenses
+    WHERE user_id = ?
     GROUP BY category
 ");
+
+$totalStmt->bind_param("i", $user_id);
+$totalStmt->execute();
+
+$totalChart = $totalStmt->get_result();
 
 $totalCategories = [];
 $totalAmounts = [];
 
-while($row = $totalChart->fetch_assoc()){
+while ($row = $totalChart->fetch_assoc()) {
 
     $totalCategories[] = $row['category'];
     $totalAmounts[] = $row['total'];
+
 }
 
-/* MONTHLY FILTER */
+/* =========================================
+   MONTHLY FILTER
+========================================= */
 
 $selectedMonth = $_GET['month'] ?? date('m');
 
-/* MONTHLY CHART DATA */
+/* =========================================
+   MONTHLY CHART DATA
+========================================= */
 
-$monthlyChart = $conn->query("
+$monthlyStmt = $conn->prepare("
     SELECT category, SUM(amount) AS total
     FROM expenses
-    WHERE MONTH(expense_date) = '$selectedMonth'
+    WHERE user_id = ?
+    AND MONTH(expense_date) = ?
     GROUP BY category
 ");
+
+$monthlyStmt->bind_param("ii", $user_id, $selectedMonth);
+$monthlyStmt->execute();
+
+$monthlyChart = $monthlyStmt->get_result();
 
 $monthlyCategories = [];
 $monthlyAmounts = [];
 
-while($row = $monthlyChart->fetch_assoc()){
+while ($row = $monthlyChart->fetch_assoc()) {
 
     $monthlyCategories[] = $row['category'];
     $monthlyAmounts[] = $row['total'];
-}
-
-/* WEEKLY FILTER */
-
-$selectedWeekMonth =
-$_GET['week_month'] ?? date('m');
-
-$selectedWeek =
-$_GET['week'] ?? 1;
-
-/* WEEK CONDITIONS */
-
-if($selectedWeek == 1){
-
-    $condition =
-    "DAY(expense_date) BETWEEN 1 AND 7";
 
 }
-elseif($selectedWeek == 2){
 
-    $condition =
-    "DAY(expense_date) BETWEEN 8 AND 14";
+/* =========================================
+   WEEKLY FILTER
+========================================= */
+
+$selectedWeekMonth = $_GET['week_month'] ?? date('m');
+$selectedWeek = $_GET['week'] ?? 1;
+
+/* =========================================
+   WEEK CONDITIONS
+========================================= */
+
+if ($selectedWeek == 1) {
+
+    $condition = "DAY(expense_date) BETWEEN 1 AND 7";
+
+} elseif ($selectedWeek == 2) {
+
+    $condition = "DAY(expense_date) BETWEEN 8 AND 14";
+
+} elseif ($selectedWeek == 3) {
+
+    $condition = "DAY(expense_date) BETWEEN 15 AND 21";
+
+} else {
+
+    $condition = "DAY(expense_date) BETWEEN 22 AND 31";
 
 }
-elseif($selectedWeek == 3){
 
-    $condition =
-    "DAY(expense_date) BETWEEN 15 AND 21";
+/* =========================================
+   WEEKLY CHART DATA
+========================================= */
 
-}
-else{
-
-    $condition =
-    "DAY(expense_date) BETWEEN 22 AND 31";
-}
-
-/* WEEKLY CHART DATA */
-
-$weeklyChart = $conn->query("
+$weeklyStmt = $conn->prepare("
     SELECT category, SUM(amount) AS total
     FROM expenses
-    WHERE MONTH(expense_date) = '$selectedWeekMonth'
+    WHERE user_id = ?
+    AND MONTH(expense_date) = ?
     AND $condition
     GROUP BY category
 ");
 
+$weeklyStmt->bind_param("ii", $user_id, $selectedWeekMonth);
+$weeklyStmt->execute();
+
+$weeklyChart = $weeklyStmt->get_result();
+
 $weeklyCategories = [];
 $weeklyAmounts = [];
 
-while($row = $weeklyChart->fetch_assoc()){
+while ($row = $weeklyChart->fetch_assoc()) {
 
     $weeklyCategories[] = $row['category'];
     $weeklyAmounts[] = $row['total'];
+
 }
+
 ?>
 
 <!DOCTYPE html>
@@ -112,7 +162,9 @@ while($row = $weeklyChart->fetch_assoc()){
 <head>
 
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<meta name="viewport"
+content="width=device-width, initial-scale=1.0">
 
 <title>Expense Charts</title>
 
@@ -188,6 +240,38 @@ body{
 .topbar h1{
     font-size:32px;
     color:#1e293b;
+}
+
+/* USER */
+
+.user-actions{
+    display:flex;
+    align-items:center;
+    gap:12px;
+}
+
+.profile-icon{
+    font-size:32px;
+    color:#1e293b;
+    text-decoration:none;
+}
+
+.auth-btn{
+    padding:8px 14px;
+    border-radius:8px;
+    text-decoration:none;
+    font-size:14px;
+    font-weight:600;
+    transition:0.3s;
+}
+
+.btn-logout{
+    background:#dc2626;
+    color:white;
+}
+
+.auth-btn:hover{
+    opacity:0.85;
 }
 
 /* TABS */
@@ -280,6 +364,15 @@ button{
     height:350px;
 }
 
+/* NO DATA */
+
+.no-data{
+    text-align:center;
+    padding:40px;
+    font-size:18px;
+    color:#666;
+}
+
 /* RESPONSIVE */
 
 @media(max-width:768px){
@@ -308,47 +401,6 @@ button{
     }
 }
 
-.user-actions {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    }
-
-.profile-icon {
-    font-size: 32px;
-    text-decoration: none;
-    }
-
-.auth-btn {
-    padding: 6px 12px;
-    border-radius: 4px;
-    text-decoration: none;
-    font-size: 14px;
-    font-weight: 500;
-    }
-
-.btn-login {
-    background-color: transparent;
-    border: 1px solid #007bff;
-    color: #007bff;
-    }
-
-.btn-register {
-    background-color: #007bff;
-    border: 1px solid #007bff;
-    color: white;
-    }
-
-.btn-logout {
-    background-color: #dc3545;
-    border: 1px solid #dc3545;
-    color: white;
-    }
-
-.auth-btn:hover {
-    opacity: 0.85;
-    }
-
 </style>
 
 </head>
@@ -362,19 +414,23 @@ button{
     <h2>DETS</h2>
 
     <a href="DETS_dashboard.php">
-        <i class="fa-solid fa-chart-line"></i> Dashboard
+        <i class="fa-solid fa-chart-line"></i>
+        Dashboard
     </a>
 
     <a href="DETS_expense_page.php">
-        <i class="fa-solid fa-wallet"></i> Expenses
+        <i class="fa-solid fa-wallet"></i>
+        Expenses
     </a>
 
     <a href="DETS_chart_page.php">
-        <i class="fa-solid fa-chart-pie"></i> Charts
+        <i class="fa-solid fa-chart-pie"></i>
+        Charts
     </a>
 
     <a href="DETS_report_page.php">
-        <i class="fa-solid fa-file-lines"></i> Reports
+        <i class="fa-solid fa-file-lines"></i>
+        Reports
     </a>
 
 </div>
@@ -383,83 +439,106 @@ button{
 
 <div class="main">
 
+    <!-- TOPBAR -->
+
     <div class="topbar">
+
         <h1>Expense Charts</h1>
+
         <div class="user-actions">
-        <!-- Conditional Display Based on Login Status -->
-        <?php if(isset($_SESSION['user_id'])): ?>
-            <!-- Shown ONLY when user is logged in -->
-            <a href="DETS_profile_page.php" class="profile-icon" title="View Profile"><i class="fa-solid fa-circle-user"></i></a>
-            <a href="DETS_logout.php" class="auth-btn btn-logout">Logout</a>
-        <?php else: ?>
-            <!-- Shown ONLY when user is guest / logged out -->
-            <a href="DETS_login_page.php" class="auth-btn btn-login">Login</a>
-            <a href="DETS_signuppage.php" class="auth-btn btn-register">Register</a>
-        <?php endif; ?>
+
+            <a href="DETS_profile_page.php"
+            class="profile-icon">
+
+                <i class="fa-solid fa-circle-user"></i>
+
+            </a>
+
+            <a href="DETS_logout.php"
+            class="auth-btn btn-logout">
+
+                Logout
+
+            </a>
+
         </div>
+
     </div>
 
     <!-- TABS -->
 
     <div class="tabs">
 
-    <button class="tab-btn <?php if($activeTab=='totalTab') echo 'active'; ?>"
-    onclick="showTab('totalTab',this)">
-    Total Expense Charts
-    </button>
+        <button class="tab-btn <?php if($activeTab=='totalTab') echo 'active'; ?>"
+        onclick="showTab('totalTab',this)">
+            Total Expense Charts
+        </button>
 
-    <button class="tab-btn <?php if($activeTab=='monthlyTab') echo 'active'; ?>"
-    onclick="showTab('monthlyTab',this)">
-    Monthly Expense Charts
-    </button>
+        <button class="tab-btn <?php if($activeTab=='monthlyTab') echo 'active'; ?>"
+        onclick="showTab('monthlyTab',this)">
+            Monthly Expense Charts
+        </button>
 
-    <button class="tab-btn <?php if($activeTab=='weeklyTab') echo 'active'; ?>"
-    onclick="showTab('weeklyTab',this)">
-    Weekly Expense Charts
-    </button>
+        <button class="tab-btn <?php if($activeTab=='weeklyTab') echo 'active'; ?>"
+        onclick="showTab('weeklyTab',this)">
+            Weekly Expense Charts
+        </button>
 
     </div>
 
-    <!-- =========================
-        TOTAL TAB
-    ========================== -->
+    <!-- TOTAL TAB -->
 
-    <div id="totalTab" class="tab-content <?php if($activeTab=='totalTab') echo 'active'; ?>">
+    <div id="totalTab"
+    class="tab-content <?php if($activeTab=='totalTab') echo 'active'; ?>">
+
+        <?php if(empty($totalCategories)) { ?>
+
+            <div class="no-data">
+                No Expense Data Found
+            </div>
+
+        <?php } else { ?>
 
         <div class="chart-grid">
 
             <div class="chart-card">
+
                 <h2>Total Expense Pie Chart</h2>
+
                 <div class="chart-container">
                     <canvas id="totalPie"></canvas>
                 </div>
+
             </div>
 
             <div class="chart-card">
+
                 <h2>Total Expense Bar Chart</h2>
+
                 <div class="chart-container">
                     <canvas id="totalBar"></canvas>
                 </div>
+
             </div>
 
         </div>
 
+        <?php } ?>
+
     </div>
 
-    <!-- =========================
-         MONTHLY TAB
-    ========================== -->
+    <!-- MONTHLY TAB -->
 
-    <div id="monthlyTab" class="tab-content <?php if($activeTab=='monthlyTab') echo 'active'; ?>">
+    <div id="monthlyTab"
+    class="tab-content <?php if($activeTab=='monthlyTab') echo 'active'; ?>">
+
         <div class="filter-box">
 
             <form method="GET">
 
                 <select name="month">
 
-                    <?php
-                    for($m=1;$m<=12;$m++){
-                    ?>
+                    <?php for($m=1;$m<=12;$m++) { ?>
 
                     <option value="<?php echo $m; ?>"
                     <?php if($selectedMonth==$m) echo "selected"; ?>>
@@ -480,40 +559,54 @@ button{
 
         </div>
 
+        <?php if(empty($monthlyCategories)) { ?>
+
+            <div class="no-data">
+                No Monthly Expense Data Found
+            </div>
+
+        <?php } else { ?>
+
         <div class="chart-grid">
 
             <div class="chart-card">
+
                 <h2>Monthly Pie Chart</h2>
+
                 <div class="chart-container">
                     <canvas id="monthlyPie"></canvas>
                 </div>
+
             </div>
 
             <div class="chart-card">
+
                 <h2>Monthly Bar Chart</h2>
+
                 <div class="chart-container">
                     <canvas id="monthlyBar"></canvas>
                 </div>
+
             </div>
 
         </div>
 
+        <?php } ?>
+
     </div>
 
-    <!-- =========================
-        WEEKLY TAB
-    ========================== -->
+    <!-- WEEKLY TAB -->
 
-    <div id="weeklyTab" class="tab-content <?php if($activeTab=='weeklyTab') echo 'active'; ?>">
+    <div id="weeklyTab"
+    class="tab-content <?php if($activeTab=='weeklyTab') echo 'active'; ?>">
+
         <div class="filter-box">
 
             <form method="GET">
 
                 <select name="week_month">
 
-                    <?php
-                    for($m=1;$m<=12;$m++){
-                    ?>
+                    <?php for($m=1;$m<=12;$m++) { ?>
 
                     <option value="<?php echo $m; ?>"
                     <?php if($selectedWeekMonth==$m) echo "selected"; ?>>
@@ -543,23 +636,39 @@ button{
 
         </div>
 
+        <?php if(empty($weeklyCategories)) { ?>
+
+            <div class="no-data">
+                No Weekly Expense Data Found
+            </div>
+
+        <?php } else { ?>
+
         <div class="chart-grid">
 
             <div class="chart-card">
+
                 <h2>Weekly Pie Chart</h2>
+
                 <div class="chart-container">
                     <canvas id="weeklyPie"></canvas>
                 </div>
+
             </div>
 
             <div class="chart-card">
+
                 <h2>Weekly Bar Chart</h2>
+
                 <div class="chart-container">
                     <canvas id="weeklyBar"></canvas>
                 </div>
+
             </div>
 
         </div>
+
+        <?php } ?>
 
     </div>
 
@@ -583,7 +692,7 @@ function showTab(tabId,btn){
     btn.classList.add('active');
 }
 
-/* COMMON COLORS */
+/* COLORS */
 
 const colors = [
     '#3b82f6',
@@ -594,7 +703,7 @@ const colors = [
     '#14b8a6'
 ];
 
-/* TOTAL */
+/* DATA */
 
 const totalLabels =
 <?php echo json_encode($totalCategories); ?>;
@@ -602,15 +711,11 @@ const totalLabels =
 const totalData =
 <?php echo json_encode($totalAmounts); ?>;
 
-/* MONTHLY */
-
 const monthlyLabels =
 <?php echo json_encode($monthlyCategories); ?>;
 
 const monthlyData =
 <?php echo json_encode($monthlyAmounts); ?>;
-
-/* WEEKLY */
 
 const weeklyLabels =
 <?php echo json_encode($weeklyCategories); ?>;
@@ -618,9 +723,11 @@ const weeklyLabels =
 const weeklyData =
 <?php echo json_encode($weeklyAmounts); ?>;
 
-/* CREATE CHART */
+/* PIE */
 
 function createPie(id,labels,data){
+
+    if(labels.length === 0) return;
 
     new Chart(document.getElementById(id),{
 
@@ -641,7 +748,11 @@ function createPie(id,labels,data){
     });
 }
 
+/* BAR */
+
 function createBar(id,labels,data){
+
+    if(labels.length === 0) return;
 
     new Chart(document.getElementById(id),{
 
@@ -669,17 +780,13 @@ function createBar(id,labels,data){
     });
 }
 
-/* TOTAL */
+/* LOAD CHARTS */
 
 createPie('totalPie',totalLabels,totalData);
 createBar('totalBar',totalLabels,totalData);
 
-/* MONTHLY */
-
 createPie('monthlyPie',monthlyLabels,monthlyData);
 createBar('monthlyBar',monthlyLabels,monthlyData);
-
-/* WEEKLY */
 
 createPie('weeklyPie',weeklyLabels,weeklyData);
 createBar('weeklyBar',weeklyLabels,weeklyData);
