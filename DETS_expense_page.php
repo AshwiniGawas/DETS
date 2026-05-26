@@ -2,28 +2,49 @@
 session_start();
 include 'DETS_db.php';
 
-/* =========================================
-   CHECK LOGIN
-========================================= */
+/* CHECK LOGIN */
 
 if (!isset($_SESSION['user_id'])) {
-
     header("Location: DETS_login_page.php");
     exit();
 }
-
 $user_id = $_SESSION['user_id'];
 
-/* =========================================
-   ADD EXPENSE
-========================================= */
+/* ADD EXPENSE */
 
 if(isset($_POST['add'])) {
-
     $title = trim($_POST['title']);
     $amount = trim($_POST['amount']);
     $category = trim($_POST['category']);
     $date = trim($_POST['expense_date']);
+
+    /* VALIDATION */
+
+    if(empty($title)){
+        $_SESSION['error'] =
+        "Expense title cannot be empty!";
+        header("Location: DETS_expense_page.php");
+        exit();
+    }
+
+    if(empty($category)){
+        $_SESSION['error'] =
+        "Category cannot be empty!";
+        header("Location: DETS_expense_page.php");
+        exit();
+    }
+
+    if($amount <= 0){
+        $_SESSION['error'] ="Invalid Amount!";
+        header("Location: DETS_expense_page.php");
+        exit();
+    }
+
+    if($date > date('Y-m-d')){
+        $_SESSION['error'] = "Future dates are not allowed!";
+        header("Location: DETS_expense_page.php");
+        exit();
+    }
 
     $stmt = $conn->prepare("
         INSERT INTO expenses
@@ -41,20 +62,16 @@ if(isset($_POST['add'])) {
     );
 
     if($stmt->execute()) {
-
         $_SESSION['success'] =
         "Expense Added Successfully!";
     }
 
     $stmt->close();
-
     header("Location: DETS_expense_page.php");
     exit();
 }
 
-/* =========================================
-   DELETE EXPENSE
-========================================= */
+/* DELETE EXPENSE */
 
 if(isset($_GET['delete'])) {
 
@@ -73,24 +90,25 @@ if(isset($_GET['delete'])) {
     );
 
     if($stmt->execute()) {
-
-        $_SESSION['success'] =
-        "Expense Deleted Successfully!";
+        $_SESSION['success'] = "Expense Deleted Successfully!";
     }
-
     $stmt->close();
-
     header("Location: DETS_expense_page.php");
     exit();
 }
 
-/* =========================================
-   SET BUDGET
-========================================= */
+/* SET BUDGET */
 
 if(isset($_POST['set_budget'])) {
-
     $budget = trim($_POST['budget']);
+
+    /* VALIDATION */
+
+    if($budget <= 0){
+        $_SESSION['error'] = "Invalid Budget Amount!";
+        header("Location: DETS_expense_page.php");
+        exit();
+    }
 
     /* DELETE OLD BUDGET */
 
@@ -105,7 +123,6 @@ if(isset($_POST['set_budget'])) {
     );
 
     $deleteStmt->execute();
-
     $deleteStmt->close();
 
     /* INSERT NEW BUDGET */
@@ -123,27 +140,20 @@ if(isset($_POST['set_budget'])) {
     );
 
     if($insertStmt->execute()) {
-
         $_SESSION['success'] =
         "Budget Added Successfully!";
     }
-
     $insertStmt->close();
-
     header("Location: DETS_expense_page.php");
     exit();
 }
 
-/* =========================================
-   CURRENT MONTH
-========================================= */
+/* CURRENT MONTH */
 
 $currentMonth = date('m');
 $currentYear = date('Y');
 
-/* =========================================
-   GET USER BUDGET
-========================================= */
+/* GET USER BUDGET */
 
 $budgetStmt = $conn->prepare("
     SELECT monthly_budget
@@ -153,27 +163,16 @@ $budgetStmt = $conn->prepare("
     LIMIT 1
 ");
 
-$budgetStmt->bind_param(
-    "i",
-    $user_id
-);
-
+$budgetStmt->bind_param("i", $user_id);
 $budgetStmt->execute();
 
-$budgetResult =
-$budgetStmt->get_result();
-
-$budgetRow =
-$budgetResult->fetch_assoc();
-
-$currentBudget =
-$budgetRow['monthly_budget'] ?? 0;
+$budgetResult = $budgetStmt->get_result();
+$budgetRow = $budgetResult->fetch_assoc();
+$currentBudget = $budgetRow['monthly_budget'] ?? 0;
 
 $budgetStmt->close();
 
-/* =========================================
-   GET TOTAL EXPENSE
-========================================= */
+/* GET TOTAL EXPENSE */
 
 $totalStmt = $conn->prepare("
     SELECT SUM(amount) AS total
@@ -203,16 +202,12 @@ $totalRow['total'] ?? 0;
 
 $totalStmt->close();
 
-/* =========================================
-   REMAINING BALANCE
-========================================= */
+/* REMAINING BALANCE */
 
 $remaining =
 $currentBudget - $totalExpense;
 
-/* =========================================
-   FETCH EXPENSES
-========================================= */
+/* FETCH EXPENSES */
 
 $expenseStmt = $conn->prepare("
     SELECT *
@@ -221,11 +216,7 @@ $expenseStmt = $conn->prepare("
     ORDER BY expense_date DESC
 ");
 
-$expenseStmt->bind_param(
-    "i",
-    $user_id
-);
-
+$expenseStmt->bind_param("i", $user_id);
 $expenseStmt->execute();
 
 $result =
@@ -235,19 +226,12 @@ $expenseStmt->get_result();
 
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-
 <meta charset="UTF-8">
-
 <meta name="viewport"
 content="width=device-width, initial-scale=1.0">
-
 <title>Expense Tracker</title>
-
-<link rel="stylesheet"
-href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <style>
 
 *{
@@ -481,7 +465,7 @@ tr:hover{
     background:#dc2626;
 }
 
-/* SUCCESS POPUP */
+/* POPUP */
 
 #popup-overlay{
     position:fixed;
@@ -494,66 +478,43 @@ tr:hover{
     justify-content:center;
     align-items:center;
     z-index:9999;
-    animation:fadeIn 0.4s ease;
 }
 
 #popup-box{
-    width:300px;
+    width:260px;
     background:white;
-    border-radius:18px;
-    padding:25px;
+    border-radius:16px;
+    padding:20px;
     text-align:center;
-    box-shadow:0 15px 40px rgba(0,0,0,0.25);
-    animation:popupScale 0.4s ease;
+    box-shadow:0 10px 30px rgba(0,0,0,0.2);
 }
 
 .popup-icon{
-    font-size:70px;
-    color:#10b981;
-    margin-bottom:15px;
-}
-
-.popup-title{
-    font-size:24px;
-    color:#10b981;
+    font-size:50px;
     margin-bottom:10px;
 }
 
+.success-icon{
+    color:#10b981;
+}
+
+.error-icon{
+    color:#ef4444;
+}
+
+.popup-title{
+    font-size:22px;
+    margin-bottom:8px;
+}
+
 .popup-message{
-    font-size:16px;
+    font-size:15px;
     color:#374151;
-}
-
-/* ANIMATIONS */
-
-@keyframes popupScale{
-
-    0%{
-        transform:scale(0.5);
-        opacity:0;
-    }
-
-    100%{
-        transform:scale(1);
-        opacity:1;
-    }
-}
-
-@keyframes fadeIn{
-
-    from{
-        opacity:0;
-    }
-
-    to{
-        opacity:1;
-    }
 }
 
 /* RESPONSIVE */
 
 @media(max-width:768px){
-
     body{
         flex-direction:column;
     }
@@ -568,163 +529,64 @@ tr:hover{
         margin-left:0;
         width:100%;
     }
-
-    .topbar{
-        flex-direction:column;
-        gap:15px;
-        align-items:flex-start;
-    }
 }
-
 </style>
-
 </head>
-
 <body>
 
 <!-- SIDEBAR -->
-
 <div class="sidebar">
-
     <h2>DETS</h2>
-
-    <a href="DETS_dashboard.php">
-        <i class="fa-solid fa-chart-line"></i>
-        Dashboard
-    </a>
-
-    <a href="DETS_expense_page.php">
-        <i class="fa-solid fa-wallet"></i>
-        Expenses
-    </a>
-
-    <a href="DETS_chart_page.php">
-        <i class="fa-solid fa-chart-pie"></i>
-        Charts
-    </a>
-
-    <a href="DETS_report_page.php">
-        <i class="fa-solid fa-file-lines"></i>
-        Reports
-    </a>
-
+    <a href="DETS_dashboard.php">  <i class="fa-solid fa-chart-line"></i> Dashboard </a>
+    <a href="DETS_expense_page.php"> <i class="fa-solid fa-wallet"></i> Expenses </a>
+    <a href="DETS_chart_page.php"> <i class="fa-solid fa-chart-pie"></i> Charts </a>
+    <a href="DETS_report_page.php"> <i class="fa-solid fa-file-lines"></i> Reports </a>
 </div>
 
 <!-- MAIN -->
-
 <div class="main">
-
-    <!-- TOPBAR -->
-
     <div class="topbar">
-
         <h1>Expense Tracker</h1>
-
         <div class="user-actions">
-
-            <a href="DETS_profile_page.php"
-               class="profile-icon">
-
-               <i class="fa-solid fa-circle-user"></i>
-
-            </a>
-
-            <a href="DETS_logout.php"
-               class="auth-btn btn-logout">
-
-               Logout
-
-            </a>
-
+            <a href="DETS_profile_page.php" class="profile-icon"> <i class="fa-solid fa-circle-user"></i> </a>
+            <a href="DETS_logout.php" class="auth-btn btn-logout"> Logout </a>
         </div>
-
     </div>
 
     <!-- BUDGET CARDS -->
-
     <div class="budget-cards">
-
-        <div class="budget-card">
-
-            <h3>Monthly Budget</h3>
-
-            <h1>
-                ₹<?php echo number_format($currentBudget,2); ?>
-            </h1>
-
+        <div class="budget-card"> <h3>Monthly Budget</h3>
+            <h1>₹<?php echo number_format($currentBudget,2); ?> </h1>
         </div>
-
+        <div class="budget-card"><h3>Monthly Expenses</h3> <h1>₹<?php echo number_format($totalExpense,2); ?></h1></div>
         <div class="budget-card">
-
-            <h3>Monthly Expenses</h3>
-
-            <h1>
-                ₹<?php echo number_format($totalExpense,2); ?>
-            </h1>
-
-        </div>
-
-        <div class="budget-card">
-
             <h3>Remaining Balance</h3>
-
-            <h1>
-                ₹<?php echo number_format($remaining,2); ?>
-            </h1>
-
+            <h1>₹<?php echo number_format($remaining,2); ?> </h1>
         </div>
-
     </div>
 
     <!-- WARNING -->
-
-    <?php if($remaining < 0){ ?>
-
-    <div class="danger">
-
-        ⚠ Budget Exceeded!
-
-    </div>
-
-    <?php } ?>
+    <?php if($remaining < 0){ ?> <div class="danger"> ⚠ Budget Exceeded! </div> <?php } ?>
 
     <!-- SET BUDGET -->
-
     <div class="form-container">
-
         <h2>Set Monthly Budget</h2>
-
         <form method="POST">
-
             <div class="form-grid">
-
                 <input type="number"
                        step="0.01"
                        name="budget"
                        placeholder="Enter Budget"
                        required>
-
-                <button type="submit"
-                        name="set_budget">
-
-                    Save Budget
-
-                </button>
-
+                <button type="submit" name="set_budget"> Save Budget </button>
             </div>
-
         </form>
-
     </div>
 
     <!-- ADD EXPENSE -->
-
     <div class="form-container">
-
         <h2>Add Expense</h2>
-
         <form method="POST">
-
             <div class="form-grid">
 
                 <input type="text"
@@ -745,143 +607,90 @@ tr:hover{
 
                 <input type="date"
                        name="expense_date"
+                       max="<?php echo date('Y-m-d'); ?>"
                        required>
 
-                <button type="submit"
-                        name="add">
-
-                    Add Expense
-
-                </button>
-
+                <button type="submit" name="add"> Add Expense </button>
             </div>
-
         </form>
-
     </div>
 
     <!-- EXPENSE TABLE -->
-
     <div class="table-container">
-
         <h2>Expense List</h2>
-
         <table>
-
             <tr>
-
                 <th>ID</th>
                 <th>Title</th>
                 <th>Amount</th>
                 <th>Category</th>
                 <th>Date</th>
                 <th>Action</th>
-
             </tr>
 
             <?php while($row = $result->fetch_assoc()) { ?>
-
             <tr>
-
                 <td><?php echo $row['id']; ?></td>
+                <td><?php echo htmlspecialchars($row['title']); ?></td>
+                <td> ₹<?php echo number_format($row['amount'],2); ?>n</td>
 
                 <td>
-                    <?php echo htmlspecialchars($row['title']); ?>
-                </td>
-
-                <td>
-                    ₹<?php echo number_format($row['amount'],2); ?>
-                </td>
-
-                <td>
-
                     <span class="category-badge">
-
                     <?php echo htmlspecialchars($row['category']); ?>
-
                     </span>
-
                 </td>
 
+                <td> <?php echo $row['expense_date']; ?> </td>
                 <td>
-                    <?php echo $row['expense_date']; ?>
+                    <a class="delete-btn" href="DETS_expense_page.php?delete=<?php echo $row['id']; ?>"
+                       onclick="return confirm('Delete this expense?')"> Delete </a>
                 </td>
-
-                <td>
-
-                    <a class="delete-btn"
-                       href="DETS_expense_page.php?delete=<?php echo $row['id']; ?>"
-                       onclick="return confirm('Delete this expense?')">
-
-                       Delete
-
-                    </a>
-
-                </td>
-
             </tr>
-
             <?php } ?>
-
         </table>
-
     </div>
-
 </div>
 
 <!-- SUCCESS POPUP -->
-
 <?php if(isset($_SESSION['success'])): ?>
-
 <div id="popup-overlay">
-
     <div id="popup-box">
-
-        <div class="popup-icon">
-
-            <i class="fa-solid fa-circle-check"></i>
-
-        </div>
-
-        <h2 class="popup-title">
-
-            Success
-
-        </h2>
-
+        <div class="popup-icon success-icon"> <i class="fa-solid fa-circle-check"></i> </div>
+        <h2 class="popup-title"> Success </h2>
         <p class="popup-message">
-
             <?php
-
             echo $_SESSION['success'];
-
             unset($_SESSION['success']);
-
             ?>
-
         </p>
-
     </div>
-
 </div>
+<?php endif; ?>
 
+<!-- ERROR POPUP -->
+<?php if(isset($_SESSION['error'])): ?>
+<div id="popup-overlay">
+    <div id="popup-box">
+        <div class="popup-icon error-icon"> <i class="fa-solid fa-circle-xmark"></i> </div>
+        <h2 class="popup-title">Error</h2>
+        <p class="popup-message">
+            <?php
+            echo $_SESSION['error'];
+            unset($_SESSION['error']);
+            ?>
+        </p>
+    </div>
+</div>
 <?php endif; ?>
 
 <script>
 
 setTimeout(() => {
-
     const popup =
     document.getElementById("popup-overlay");
-
-    if(popup){
-
-        popup.style.display = "none";
-    }
-
+    if(popup) { popup.style.display = "none"; }
 },2500);
 
 </script>
-
 </body>
 </html>
