@@ -632,7 +632,7 @@ tr:hover{
             <tr>
                 <td><?php echo $row['id']; ?></td>
                 <td><?php echo htmlspecialchars($row['title']); ?></td>
-                <td> ₹<?php echo number_format($row['amount'],2); ?>n</td>
+                <td> ₹<?php echo number_format($row['amount'],2); ?></td>
 
                 <td>
                     <span class="category-badge">
